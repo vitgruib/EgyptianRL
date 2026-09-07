@@ -5,9 +5,10 @@ from gymnasium import spaces
 from gymnasium.wrappers import FlattenObservation
 from Game import Game, Model
 from stable_baselines3 import PPO
+from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.monitor import Monitor
 
-verbosity = 1
+verbosity = 0
 seed = 42  # TODO make this actually do something
 
 
@@ -86,27 +87,30 @@ class CustomEnv(gym.Env):
         return observation, reward, terminated, truncated, info
 
 
+class LogEveryNStepsCallback(BaseCallback):
+    """Prints progress every n_steps environment timesteps."""
+
+    def __init__(self, n_steps: int = 1000, verbose: int = 0):
+        super().__init__(verbose)
+        self.n_steps = n_steps
+        self._last_logged = 0
+
+    def _on_step(self) -> bool:
+        if self.num_timesteps - self._last_logged >= self.n_steps:
+            self._last_logged = self.num_timesteps
+            print(f"timesteps: {self.num_timesteps}")
+        return True
+
+
 if __name__ == "__main__":
     env = Monitor(FlattenObservation(CustomEnv()))
     model = PPO(
         "MlpPolicy", env, verbose=1, tensorboard_log="./ppo_egyptianrl_tensorboard/"
     )
-    model.learn(total_timesteps=2000)
+    model.learn(total_timesteps=25000, callback=LogEveryNStepsCallback(1000))
     obs, info = env.reset()
     while True:
         action, _states = model.predict(obs)
         obs, rewards, terminated, truncated, info = env.step(action)
         if terminated or truncated:
             obs, info = env.reset()
-
-    # observation = env.reset()
-    # episode_over = False
-    # total_reward = 0
-    # print("episode started")
-    # while not episode_over:
-    #     action = env.action_space.sample()
-    #     observation, reward, terminated, truncated, info = env.step(action)
-    #     total_reward += reward
-    #     episode_over = terminated or truncated
-    # print("episode end")
-    # env.close()
