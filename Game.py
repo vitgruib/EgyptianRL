@@ -12,6 +12,7 @@ class Game:
         self.rl = 0  # the id of the rl agent
         self.terminated = False
         self.reward = 0
+        self.info = {}
         # game
         self.n = len(models)
         self.active_turn = 0  # 0 is going to be the player
@@ -33,6 +34,10 @@ class Game:
         curr_model = self.models[self.active_turn]
         if self.active_turn != self.rl:
             preslap = curr_model.move()
+        self.info = {
+            "preslap": preslap,
+            "preslap_card": self.pile[-1] if len(self.pile) else None,
+        }
         card = self.draw()
         if self.terminated:
             return
@@ -62,9 +67,10 @@ class Game:
             self.reset(valid)
             return
         elif preslap:
-            self.pile.appendleft(self.draw())
+            card = self.draw()
             if self.terminated:
                 return
+            self.pile.appendleft(card)
             if self.verbosity >= 3:
                 print("X", end="")
         # face card
@@ -103,7 +109,8 @@ class Game:
 
     def draw(self):
         if not len(self.decks[self.active_turn]) or self.terminated:
-            print(f". Game ended: {[len(deck) for deck in self.decks]}")
+            if self.verbosity >= 1:
+                print(f". Game ended: {[len(deck) for deck in self.decks]}")
             self.terminated = True
             return
         card = self.decks[self.active_turn].popleft()

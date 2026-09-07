@@ -1,12 +1,13 @@
 from typing import Optional
-
 import gymnasium as gym
 import numpy as np
 from gymnasium import spaces
-from Game import Game, Deck, Model
-from stable_baselines3.common.env_checker import check_env
+from gymnasium.wrappers import FlattenObservation
+from Game import Game, Model
+from stable_baselines3 import PPO
+from stable_baselines3.common.monitor import Monitor
 
-verbosity = 3
+verbosity = 1
 seed = 42  # TODO make this actually do something
 
 
@@ -22,7 +23,7 @@ class CustomEnv(gym.Env):
         # Example for using image as input (channel-first; channel-last also works):
         self.observation_space = spaces.Dict(
             {
-                "pile": spaces.MultiDiscrete([14] * 52),
+                "pile": spaces.MultiDiscrete([14] * 4),
                 "pile_size": spaces.Discrete(53),
                 "deck_size": spaces.Discrete(53),
             }
@@ -31,8 +32,9 @@ class CustomEnv(gym.Env):
         self.steps = 0
 
     def _get_obs(self):
+        top_cards = list(self.game.pile)[-4:]
         return {
-            "pile": np.array(list(self.game.pile) + [0] * (52 - len(self.game.pile))),
+            "pile": np.array(top_cards + [0] * (4 - len(top_cards))),
             "pile_size": len(self.game.pile),
             "deck_size": len(self.game.decks[self.game.rl]),
         }
@@ -79,23 +81,32 @@ class CustomEnv(gym.Env):
         self.game.reward = 0
 
         observation = self._get_obs()
-        info = {}
+        info = dict(self.game.info)
 
         return observation, reward, terminated, truncated, info
 
 
 if __name__ == "__main__":
-    env = CustomEnv()
-    # It will check your custom environment and output additional warnings if needed
-    check_env(env)
-    observation = env.reset()
-    episode_over = False
-    total_reward = 0
-    print("episode started")
-    while not episode_over:
-        action = env.action_space.sample()
-        observation, reward, terminated, truncated, info = env.step(action)
-        total_reward += reward
-        episode_over = terminated or truncated
-    print("episode end")
-    env.close()
+    env = Monitor(FlattenObservation(CustomEnv()))
+    model = PPO(
+        "MlpPolicy", env, verbose=1, tensorboard_log="./ppo_egyptianrl_tensorboard/"
+    )
+    model.learn(total_timesteps=2000)
+    obs, info = env.reset()
+    while True:
+        action, _states = model.predict(obs)
+        obs, rewards, terminated, truncated, info = env.step(action)
+        if terminated or truncated:
+            obs, info = env.reset()
+
+    # observation = env.reset()
+    # episode_over = False
+    # total_reward = 0
+    # print("episode started")
+    # while not episode_over:
+    #     action = env.action_space.sample()
+    #     observation, reward, terminated, truncated, info = env.step(action)
+    #     total_reward += reward
+    #     episode_over = terminated or truncated
+    # print("episode end")
+    # env.close()
