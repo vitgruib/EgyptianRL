@@ -35,8 +35,7 @@ class Game:
         if self.active_turn != self.rl:
             preslap = curr_model.move()
         self.info = {
-            "preslap": preslap,
-            "preslap_card": self.pile[-1] if len(self.pile) else None,
+            "preslap_card": self.pile[-1] if preslap and len(self.pile) else 0,
         }
         card = self.draw()
         if self.terminated:
