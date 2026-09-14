@@ -3,6 +3,14 @@ import random
 from typing import Optional
 import numpy as np
 
+CARD_TYPES = {1: "Ace", 11: "Jack", 12: "Queen", 13: "King"}
+
+
+def card_type(card):
+    if not card:
+        return None
+    return CARD_TYPES.get(card, "Number")
+
 
 class Game:
     def __init__(self, models, verbosity=3):
@@ -27,15 +35,22 @@ class Game:
         self.play()
 
     def play(self):
+        guard = 0
         while self.active_turn != self.rl:
             self.move()
+            guard += 1
+            if guard > 10000:
+                self.terminated = True
+                break
 
     def move(self, preslap=False):
         curr_model = self.models[self.active_turn]
         if self.active_turn != self.rl:
             preslap = curr_model.move()
+        preslap_card = self.pile[-1] if preslap and len(self.pile) else 0
         self.info = {
-            "preslap_card": self.pile[-1] if preslap and len(self.pile) else 0,
+            "preslap_card": preslap_card,
+            "preslap_type": card_type(preslap_card),
         }
         card = self.draw()
         if self.terminated:
@@ -114,7 +129,7 @@ class Game:
             return
         card = self.decks[self.active_turn].popleft()
         if self.active_turn == self.rl:
-            self.reward -= self.cardValue(card) / 2
+            self.reward -= self.cardValue(card) / 20
         return card
 
     def cardValue(self, card):
