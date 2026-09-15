@@ -47,10 +47,14 @@ class Game:
         curr_model = self.models[self.active_turn]
         if self.active_turn != self.rl:
             preslap = curr_model.move()
-        preslap_card = self.pile[-1] if preslap and len(self.pile) else 0
+        # Top-of-pile card at decision time, tracked regardless of whether we
+        # preslap, so callers can compute P(preslap | card type) instead of
+        # only ever seeing the card when a preslap happened.
+        pile_top_card = self.pile[-1] if len(self.pile) else 0
         self.info = {
-            "preslap_card": preslap_card,
-            "preslap_type": card_type(preslap_card),
+            "preslap": bool(preslap),
+            "pile_top_card": pile_top_card,
+            "pile_top_type": card_type(pile_top_card),
         }
         card = self.draw()
         if self.terminated:

@@ -130,9 +130,17 @@ class PreslapLoggingCallback(BaseCallback):
     """Logs the RL agent's own preslap decisions to TensorBoard.
 
     SB3's Monitor only auto-logs episode reward/length; it never forwards
-    custom `info` keys. This reads `preslap_type` off each step's info and
-    records the preslap rate, plus a per-card-type breakdown, once per
-    rollout so it shows up as its own chart alongside train/rollout.
+    custom `info` keys. This reads `pile_top_type`/`preslap` off each step's
+    info (tracked on every decision, not just preslapped ones) and records,
+    once per rollout:
+      - custom/preslap_rate: overall P(preslap), unconditional baseline.
+      - custom/preslap_rate_given_card_type/{type}: P(preslap | that card
+        type is on top of the pile) -- how often you actually slap it each
+        time it appears.
+      - custom/preslap_lift_given_card_type/{type}: the conditional rate
+        divided by the overall rate, i.e. how much more/less than baseline
+        you slap that type (1.0 = no different from baseline, >1 = slap it
+        more than average, <1 = less).
     """
 
     CARD_TYPES = ["Ace", "Jack", "Queen", "King", "Number"]
@@ -144,7 +152,8 @@ class PreslapLoggingCallback(BaseCallback):
     def _reset_counts(self):
         self.step_count = 0
         self.preslap_count = 0
-        self.type_counts = {t: 0 for t in self.CARD_TYPES}
+        self.type_seen = {t: 0 for t in self.CARD_TYPES}
+        self.type_preslapped = {t: 0 for t in self.CARD_TYPES}
 
     def _on_rollout_start(self) -> None:
         self._reset_counts()
@@ -152,18 +161,32 @@ class PreslapLoggingCallback(BaseCallback):
     def _on_step(self) -> bool:
         for info in self.locals["infos"]:
             self.step_count += 1
-            preslap_type = info.get("preslap_type")
-            if preslap_type:
+            preslapped = info.get("preslap", False)
+            if preslapped:
                 self.preslap_count += 1
-                self.type_counts[preslap_type] += 1
+            top_type = info.get("pile_top_type")
+            if top_type:
+                self.type_seen[top_type] += 1
+                if preslapped:
+                    self.type_preslapped[top_type] += 1
         return True
 
     def _on_rollout_end(self) -> None:
         if not self.step_count:
             return
-        self.logger.record("custom/preslap_rate", self.preslap_count / self.step_count)
-        for card_type, count in self.type_counts.items():
-            self.logger.record(f"custom/preslap_card_type/{card_type}", count / self.step_count)
+        overall_rate = self.preslap_count / self.step_count
+        self.logger.record("custom/preslap_rate", overall_rate)
+        for card_type in self.CARD_TYPES:
+            seen = self.type_seen[card_type]
+            if not seen:
+                continue
+            conditional_rate = self.type_preslapped[card_type] / seen
+            self.logger.record(f"custom/preslap_rate_given_card_type/{card_type}", conditional_rate)
+            if overall_rate:
+                self.logger.record(
+                    f"custom/preslap_lift_given_card_type/{card_type}",
+                    conditional_rate / overall_rate,
+                )
 
 
 class LogEveryNStepsCallback(BaseCallback):
