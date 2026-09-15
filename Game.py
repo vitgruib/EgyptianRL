@@ -140,11 +140,11 @@ class Game:
         if card <= 10:
             return 1
         elif card == 11:
-            return 6
+            return 3
         elif card == 12:
-            return 5
+            return 2.5
         elif card == 13:
-            return 4
+            return 2
 
 
 class Deck:
