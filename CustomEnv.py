@@ -2,11 +2,10 @@ from typing import Optional
 import gymnasium as gym
 import numpy as np
 from gymnasium import spaces
-from gymnasium.wrappers import FlattenObservation
 from Game import Game, Model
-from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import BaseCallback
-from stable_baselines3.common.monitor import Monitor
+
+from deck_configs import resolve_deck
 
 verbosity = 0
 seed = 42  # TODO make this actually do something
@@ -24,18 +23,23 @@ class CustomEnv(gym.Env):
     # (max 6 per card) so it dominates the episode's cumulative reward.
     TERMINAL_WIN_BONUS = 50.0
 
-    def __init__(self):
+    def __init__(self, deck="full"):
         super().__init__()
-        # Define action and observation space
-        # They must be gym.spaces objects
-        # Example when using discrete actions:
+        # deck controls the game's difficulty/size (see deck_configs.py) --
+        # observation space is derived from it so a simplified deck also
+        # means a smaller, easier-to-learn input.
+        deck_config = resolve_deck(deck)
+        self.deck_ranks = deck_config["ranks"]
+        self.deck_copies = deck_config["copies"]
+        self.max_rank = max(self.deck_ranks)
+        self.total_cards = len(self.deck_ranks) * self.deck_copies
+
         self.action_space = spaces.MultiBinary(1)
-        # Example for using image as input (channel-first; channel-last also works):
         self.observation_space = spaces.Dict(
             {
-                "pile": spaces.MultiDiscrete([14] * 4),
-                "pile_size": spaces.Discrete(53),
-                "deck_size": spaces.Discrete(53),
+                "pile": spaces.MultiDiscrete([self.max_rank + 1] * 4),
+                "pile_size": spaces.Discrete(self.total_cards + 1),
+                "deck_size": spaces.Discrete(self.total_cards + 1),
                 # face_counter[0]: turns left on the face-card challenge, clipped to
                 # [-1, 3] and shifted to [0, 4] (0 = no challenge in progress).
                 # face_counter[1]: 0 = no owner, 1 = rl agent owns it, 2 = opponent does.
@@ -75,7 +79,12 @@ class CustomEnv(gym.Env):
         # IMPORTANT: Must call this first to seed the random number generator
         super().reset(seed=seed)
 
-        self.game = Game([Model() for i in range(2)], verbosity=verbosity)
+        self.game = Game(
+            [Model() for i in range(2)],
+            verbosity=verbosity,
+            deck_ranks=self.deck_ranks,
+            deck_copies=self.deck_copies,
+        )
         self.steps = 0
 
         observation = self._get_obs()
@@ -204,18 +213,5 @@ class LogEveryNStepsCallback(BaseCallback):
         return True
 
 
-if __name__ == "__main__":
-    env = Monitor(FlattenObservation(CustomEnv()))
-    model = PPO(
-        "MlpPolicy",
-        env,
-        verbose=1,
-        tensorboard_log="./ppo_egyptianrl_tensorboard/",
-        ent_coef=0.01,
-    )
-    model.learn(
-        total_timesteps=300000,
-        callback=[LogEveryNStepsCallback(10000), PreslapLoggingCallback()],
-    )
-    model.save("ppo_egyptianrl")
-    print("Training complete, model saved to ppo_egyptianrl.zip")
+# Training entrypoint lives in train.py, which takes deck/architecture as
+# CLI flags -- `python3 train.py --deck simple --net-arch 128,128`.

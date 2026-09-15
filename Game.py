@@ -13,7 +13,7 @@ def card_type(card):
 
 
 class Game:
-    def __init__(self, models, verbosity=3):
+    def __init__(self, models, verbosity=3, deck_ranks=None, deck_copies=4):
         # RL
         # verbosity 1 prints the ending, 2 prints every slap, 3 every card
         self.verbosity = verbosity
@@ -27,7 +27,7 @@ class Game:
         self.pile = deque()
         self.face_counter = [-1, -1]  # remaining turns, owner
         # players
-        self.decks = Deck().deal(self.n)
+        self.decks = Deck(ranks=deck_ranks, copies=deck_copies).deal(self.n)
         self.models = models
         for model in models:
             model.connect(self)
@@ -148,13 +148,15 @@ class Game:
 
 
 class Deck:
-    def __init__(self):
-        self.mainDeck = [x for x in range(1, 14)] * 4
+    def __init__(self, ranks=None, copies=4):
+        ranks = list(ranks) if ranks is not None else list(range(1, 14))
+        self.mainDeck = ranks * copies
 
     def deal(self, n):
         random.shuffle(self.mainDeck)
+        per_player = len(self.mainDeck) // n
         return [
-            deque(self.mainDeck[(i) * (52 // n) : (i + 1) * (52 // n)])
+            deque(self.mainDeck[(i) * per_player : (i + 1) * per_player])
             for i in range(n)
         ]
 

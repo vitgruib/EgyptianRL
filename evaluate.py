@@ -6,13 +6,31 @@ a 95% confidence interval, so a real edge can be told apart from noise.
 """
 
 import argparse
+import json
 import math
+import os
 
 import numpy as np
 from gymnasium.wrappers import FlattenObservation
 from stable_baselines3 import PPO
 
 from CustomEnv import CustomEnv
+from deck_configs import DECK_PRESETS
+
+
+def resolve_model_deck(model_path, cli_deck):
+    """Prefer the deck recorded in a train.py sidecar JSON over --deck, so
+    evaluating a model always uses the environment it was actually trained
+    on. Falls back to --deck for older checkpoints with no sidecar."""
+    sidecar = os.path.splitext(model_path)[0] + ".json"
+    if os.path.exists(sidecar):
+        with open(sidecar) as f:
+            config = json.load(f)
+        deck = config.get("deck", cli_deck)
+        print(f"Found {sidecar}: evaluating with deck={deck!r} (from training config)")
+        return deck
+    print(f"No sidecar config found for {model_path}; assuming deck={cli_deck!r}")
+    return cli_deck
 
 
 def run_episodes(env, action_fn, n_episodes):
@@ -53,19 +71,22 @@ def summarize(name, rewards, wins, lengths):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--model", default="ppo_egyptianrl.zip", help="Path to a saved PPO model")
+    parser.add_argument("--model", required=True, help="Path to a saved PPO model, e.g. ppo_full_64x64.zip")
+    parser.add_argument("--deck", default="full", choices=list(DECK_PRESETS), help="Fallback deck if the model has no train.py sidecar JSON")
     parser.add_argument("--episodes", type=int, default=1500, help="Episodes per policy")
     parser.add_argument("--seed", type=int, default=0)
     args = parser.parse_args()
 
     rng = np.random.default_rng(args.seed)
+    deck = resolve_model_deck(args.model, args.deck)
 
     print(f"Evaluating over {args.episodes} episodes per policy (95% CI shown)\n")
 
     results = {}
 
-    # Fixed baselines don't need obs, so they run on the plain (unwrapped) env.
-    baseline_env = CustomEnv()
+    # Fixed baselines don't need obs, so they run on the plain (unwrapped) env,
+    # but it must be the same deck the trained model saw for a fair comparison.
+    baseline_env = CustomEnv(deck=deck)
     baselines = {
         "never_preslap": lambda obs: np.array([0]),
         "always_preslap": lambda obs: np.array([1]),
@@ -77,7 +98,7 @@ def main():
 
     # Trained policy needs the same FlattenObservation wrapper used in training.
     model = PPO.load(args.model)
-    trained_env = FlattenObservation(CustomEnv())
+    trained_env = FlattenObservation(CustomEnv(deck=deck))
     trained_action = lambda obs: model.predict(obs, deterministic=True)[0]
     rewards, wins, lengths = run_episodes(trained_env, trained_action, args.episodes)
     results["trained_ppo"] = summarize("trained_ppo", rewards, wins, lengths)
